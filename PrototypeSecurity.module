@@ -193,7 +193,7 @@ class PrototypeSecurity extends WireData implements Module, ConfigurableModule {
 
                 $timestamp = (int) $this->data['retryAfter'];
                 $timestamp = time() >= $timestamp ? time() + 300 + intval(60 * (int)$this->data['retryAfter_autoIncrease']) : $timestamp; 
-                $retryAfterString = date($this->data['retryAfter_inputdate'] . ' @ ' . $this->data['retryAfter_inputtime'], $timestamp);  visitors
+                $retryAfterString = date($this->data['retryAfter_inputdate'] . ' @ ' . $this->data['retryAfter_inputtime'], $timestamp);
                 $message = $this->wire('session')->loginFailed || !$this->isAllowedUser ? "<p>" . $failedMessage . "</p>" : "";
                 if(!$failedMessage) $message .= str_replace('{{RETRYAFTER}}', $retryAfterString, ($this->data['message'.$lang] ? $this->data['message'.$lang] : $this->data['message'])); 
 
