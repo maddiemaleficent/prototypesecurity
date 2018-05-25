@@ -1,0 +1,390 @@
+<?php
+
+class PrototypeSecurity extends WireData implements Module, ConfigurableModule {
+
+    public static function getModuleInfo() {
+        return array(
+            'title' => 'Prototype Security',
+            'summary' => 'Allows you to put your site into protected mode with individual branding.',
+            'author' => 'Madeline Egert',
+            'version' => '1.0',
+            'permanent' => false,
+            'autoload' => true,
+            'singular' => true,
+            'icon' => 'lock'
+        );
+    }
+
+
+    protected $isAllowedUser = false;
+    protected $data = array();
+
+
+    static public function getDefaultData() {
+            return array(
+                "protectedMode" => 0,
+                "roles" => array(),
+                "retryAfter_inputdate" => "Y-m-d",
+                "retryAfter_inputtime" => "H:i",
+                "retryAfter_autoIncrease" => 60,
+                "retryAfter" => time(),
+                "message" => "Diese Seite befindet sich derzeit im geschützten Modus. Sie müssen sich anmelden, um die Website zu sehen.",
+                "prohibitedMessage" => "Entschuldigung, Sie sind nicht berechtigt, die Website im geschützten Modus anzuzeigen.",
+                "usernamePlaceholder" => "Benutzername",
+                "passwordPlaceholder" => "Passwort",
+                "loginButtonText" => "Anmelden",
+                "logincss" => "
+				html, body, div, span, applet, object, iframe,
+				h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+				a, abbr, acronym, address, big, cite, code,
+				del, dfn, em, img, ins, kbd, q, s, samp,
+				small, strike, strong, sub, sup, tt, var,
+				b, u, i, center,
+				dl, dt, dd, ol, ul, li,
+				fieldset, form, label, legend,
+				table, caption, tbody, tfoot, thead, tr, th, td,
+				article, aside, canvas, details, embed, 
+				figure, figcaption, footer, header, hgroup, 
+				menu, nav, output, ruby, section, summary,
+				time, mark, audio, video, main, input, textarea {
+					margin: 0;
+					padding: 0;
+					border: 0;
+					font-size: 100%;
+					font: inherit;
+				    font-family: Arial, Helvetica, sans-serif;
+				    background: rgb(17, 17, 17);
+				}
+				
+				article, aside, details, figcaption, figure, 
+				footer, header, hgroup, menu, nav, section, main {
+					display: block;
+				}
+				table {
+					border-collapse: collapse;
+					border-spacing: 0;
+				}
+				html {
+					overflow-y: -moz-scrollbars-vertical;
+					overflow-y: scroll;
+				}
+				
+				body *{
+					outline: none;
+					box-sizing: border-box;
+				}
+				
+				.logo{
+				    width: 80px;
+				    display: block;
+				    margin: 1em 0 0 1em;
+				    text-align: right;
+				}
+				
+				.protected-mode-container {
+				    width: 400px;
+				    max-width: calc(100vw - 20px);
+				    margin: 10vw auto 0;
+				    position: relative;
+				}
+				
+				p, legend {
+				    display: block;
+				    width: 100%;
+				    margin-bottom: 1rem;
+				    line-height: 1.4;
+				    color: #6F6F6F;
+				}
+				
+				button {
+				    font-size: 100%;
+				    cursor:pointer;
+				    padding: 0.5em 1em;
+				    background-color: #A2C619;
+				    color:#fff;
+				    text-decoration: none;
+				    border: 0 rgba(0,0,0,0);
+				    border-radius: 2px;
+				}
+				button:hover,
+				button:focus {
+				    background-color:  #85A214;
+				}
+				button:focus {
+				    outline: 0;
+				}
+				
+				input[type='text'],
+				input[type='password'] {
+				    font-size: 100%;
+				    padding: 0.5rem;
+				    display: inline-block;
+				    border: 1px solid #ccc;
+				    border-radius: 4px;
+				    -webkit-box-sizing: border-box;
+				    -moz-box-sizing: border-box;
+				    box-sizing: border-box;
+				}
+				@media only screen and (max-width: 960px) {
+				input[type='text'],
+				input[type='password'] {
+					width:100%;
+					margin-bottom:1em;}
+				}
+				
+				.legals{
+				    position: relative;
+				    text-align: center;
+				    padding-top: 22vw;
+				}
+				
+				.legals a{
+					color: #6F6F6F;
+					font-size: 0.75em;
+					margin: 0 auto;
+					text-decoration: none;
+				}	
+"
+            );
+    }
+
+    public function __construct() {
+       foreach(self::getDefaultData() as $key => $value) {
+               $this->$key = $value;
+       }
+    }
+
+    public function init() {
+
+        $this->isAllowedUser = $this->isAllowedUser();
+
+        if($this->isAllowedUser || !$this->data['protectedMode']) return;
+        $this->addHookAfter('Page::render', $this, 'protectedCheck', array('priority'=>1000));
+    }
+
+    protected function protectedCheck(HookEvent $event) {
+
+        if($this->wire('page')->url != $this->wire('config')->urls->admin."login/") {
+
+            if($this->wire('languages')) {
+                $userLanguage = $this->wire('user')->language;
+                $lang = $userLanguage->isDefault() ? '' : "__$userLanguage->id";
+            }
+            else {
+                $lang = '';
+            }
+
+            if($this->wire('input')->post->username && $this->wire('input')->post->pass) {
+                $username = $this->wire('sanitizer')->username($this->wire('input')->post->username);
+                $user = $this->wire('session')->login($username, $this->wire('input')->post->pass);
+                if(!$user) $this->wire('session')->loginFailed = true;
+                $this->wire('session')->redirect(htmlspecialchars($_SERVER['REQUEST_URI']));
+            }
+            else {
+                if($this->wire('session')->loginFailed) {
+                    $failedMessage = __("Login fehlgeschlagen - probieren Sie es erneut!");
+                }
+                elseif($this->wire('user')->isLoggedin() && !$this->isAllowedUser) {
+                    $failedMessage = $this->data['prohibitedMessage'];
+                }
+                else {
+                    $failedMessage = null;
+                }
+
+                $timestamp = (int) $this->data['retryAfter'];
+                $timestamp = time() >= $timestamp ? time() + 300 + intval(60 * (int)$this->data['retryAfter_autoIncrease']) : $timestamp; 
+                $retryAfterString = date($this->data['retryAfter_inputdate'] . ' @ ' . $this->data['retryAfter_inputtime'], $timestamp);  visitors
+                $message = $this->wire('session')->loginFailed || !$this->isAllowedUser ? "<p>" . $failedMessage . "</p>" : "";
+                if(!$failedMessage) $message .= str_replace('{{RETRYAFTER}}', $retryAfterString, ($this->data['message'.$lang] ? $this->data['message'.$lang] : $this->data['message'])); 
+
+
+                if($this->wire('session')->loginFailed) $this->wire('session')->loginFailed = false;
+
+                $event->return = "
+                <!DOCTYPE html>
+                    <head>
+                        <meta charset='utf-8' />
+                        <meta name='viewport' content='width=device-width, initial-scale=1'>
+                        <title>protected :: ".$this->wire('page')->title."</title>
+                        <style>
+                            ".$this->data['logincss']."
+                        </style>
+                    </head>
+                    <body>
+                    <img class='logo' src='https://www.hochwarth-ecom.de/site/templates/build/assets/logo.svg'>
+                        <div class='protected-mode-container'>
+                            <form class='protectedModeForm' action='".htmlspecialchars($_SERVER['REQUEST_URI'])."' method='post'>
+                                    <legend>{$message}</legend>
+                                    <p>
+                                        <input type='text' name='username' placeholder='".($this->data['usernamePlaceholder'.$lang] ? $this->data['usernamePlaceholder'.$lang] : $this->data['usernamePlaceholder'])."'>
+                                        <input type='password' name='pass' placeholder='".($this->data['passwordPlaceholder'.$lang] ? $this->data['passwordPlaceholder'.$lang] : $this->data['passwordPlaceholder'])."'>
+                                    <p>
+                                    <p>
+                                        <button type='submit' name='login'>".($this->data['loginButtonText'.$lang] ? $this->data['loginButtonText'.$lang] : $this->data['loginButtonText'])."</button>
+                                    </p>
+                            </form>
+                        </div>
+                        <div  class='legals'>
+	                        <a target='_blank' href='https://www.hochwarth-ecom.de/impressum/'>Impressum</a>
+	                        <a target='_blank' href='https://www.hochwarth-ecom.de/datenschutz/'>Datenschutz</a>
+                        </div>
+                    </body>
+                </html>
+                ";
+            }
+        }
+    }
+
+
+    private function isAllowedUser() {
+        if($this->wire('user')->isSuperuser()) return true;
+        if(!$this->wire('user')->isLoggedin()) return false;
+        if(count($this->data['roles']) && !$this->wire('user')->roles->has("name=".implode("|",$this->data['roles']))) {
+            return false;
+        }
+        else {
+            return true;
+        }
+    }
+
+    public function getModuleConfigInputfields(array $data) {
+
+        $data = array_merge(self::getDefaultData(), $data);
+
+        $wrapper = new InputfieldWrapper();
+
+        $f = $this->wire('modules')->get("InputfieldMarkup");
+        $f->attr('name', 'instructions');
+        $f->label = __('Instructions');
+        $f->value = "
+        <p>Im geschützten Modus ist das Front-End dieser Website nur verfügbar, wenn der Benutzer angemeldet ist.</p>
+        <p>Um die Administrationsoberfläche und die URL von Processwire für den Benutzer unsichtbar zu halten, verwendet dieses Modul ein eigenes einfaches Anmeldeformular.</p>
+        ";
+        $wrapper->add($f);
+
+        $f = $this->wire('modules')->get("InputfieldCheckbox");
+        $f->attr('name', 'protectedMode');
+        $f->label = __('Protected / Maintenance Mode');
+        $f->description = __('Wenn diese Option aktiviert ist, können nur angemeldete Benutzer das Front-End der Website anzeigen.');
+        $f->attr('checked', $data['protectedMode'] ? 'checked' : '' );
+        $wrapper->add($f);
+
+        $f = $this->wire('modules')->get("InputfieldAsmSelect");
+        $f->name = 'roles';
+        $f->label = 'Allowed Roles';
+        $f->showIf = "page_protected=1";
+        $f->description = __("Um den Zugriff auf bestimmte Rollen zu beschränken, wählen Sie sie hier aus. ");
+        $f->notes = __("Hinweis: Die Benutzer mit diesen Rollen müssen sich weiterhin anmelden, um die Seite anzeigen zu können.");
+        foreach($this->wire('roles') as $role) {
+            $f->addOption($role->name, $role->name);
+            if(isset($this->data['roles']) && in_array($role->name, $this->data['roles'])) $f->attr('value', $role->name);
+        }
+        $f->setAsmSelectOption('sortable', false);
+        $f->showIf = "protectedMode=1";
+        $wrapper->append($f);
+
+
+        $f = $this->wire('modules')->get("InputfieldDatetime");
+        $f->attr('name', 'retryAfter');
+        $f->label = __('Estimated end of maintenance');
+        $f->description = __('This will be used to populate the "Retry-After" header.');
+        $f->attr('value', 1===(int)$data['protectedMode'] && $data['retryAfter'] ? $data['retryAfter'] : time());
+        $f->dateInputFormat = $data['retryAfter_inputdate'];
+        $f->timeInputFormat = $data['retryAfter_inputtime'];
+        $f->datepicker = 1;
+        $f->defaultToday = 1;
+        $f->showIf = "protectedMode=1";
+        $wrapper->add($f);
+
+        $fieldset = $this->wire('modules')->get('InputfieldFieldset');
+        $fieldset->label = __('Advanced Configuration');
+        $fieldset->showIf = "protectedMode=1";
+        $fieldset->attr('name', '_advanced_configuration');
+        $fieldset->collapsed = Inputfield::collapsedYes;
+
+            $f = $this->wire('modules')->get("InputfieldText");
+            $f->attr('name', 'retryAfter_inputdate');
+            $f->label = __('Inputformat for Date in the DateTime-field');
+            $f->description = __('Gültig sind alle Optionen der Funktion PHP date (), zum Beispiel m-d-Y');
+            $f->value = $data['retryAfter_inputdate'];
+            $f->columnWidth = 30;
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldText");
+            $f->attr('name', 'retryAfter_inputtime');
+            $f->label = __('Inputformat for Time in the DateTime-field');
+            $f->description = __('Gültig sind alle Optionen der PHP date () Funktion, zB H: i');
+            $f->value = $data['retryAfter_inputtime'];
+            $f->columnWidth = 30;
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldInteger");
+            $f->attr('name', 'retryAfter_autoIncrease');
+            $f->label = __('Auto Increase Value');
+            $f->description = __('Wenn die geschätzte Wartungszeit erreicht ist, sich die Website jedoch noch im Wartungsmodus befindet, fügen Sie diese Minutenanzahl zur aktuellen Zeit hinzu.');
+            $f->value = $data['retryAfter_autoIncrease'];
+            $f->columnWidth = 40;
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldTextarea");
+            $f->attr('name', 'message');
+            $f->label = __('Login Message');
+            $f->useLanguages = true;
+            $f->description = __('Diese Nachricht wird Benutzern angezeigt, wenn sie versuchen, die Website anzuzeigen.');
+            $f->notes = __('Wenn Sie dieses Tool als Wartungsmodus verwenden, möchten Sie vielleicht Folgendes in Ihrer Nachricht: "Diese Site befindet sich im Wartungsmodus! Die geschätzte Zeit, um die Wartung abzuschließen, ist: {{RETRYAFTER}} <br /> Aber wenn Sie ein Konto haben kann sich trotzdem auf der Seite einloggen."');
+            $f->value = $data['message'];
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldTextarea");
+            $f->attr('name', 'prohibitedMessage');
+            $f->label = __('Prohibited Message');
+            $f->useLanguages = true;
+            $f->description = __('Diese Nachricht wird Benutzern angezeigt, wenn ihre Rolle nicht erlaubt ist.');
+            $f->value = $data['prohibitedMessage'];
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldText");
+            $f->attr('name', 'usernamePlaceholder');
+            $f->label = __('Username Placeholder');
+            $f->useLanguages = true;
+            $f->description = __('Standardmäßig ist dies "Benutzername".');
+            $f->value = $data['usernamePlaceholder'];
+            $f->columnWidth = 33;
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldText");
+            $f->attr('name', 'passwordPlaceholder');
+            $f->label = __('Password Placeholder');
+            $f->useLanguages = true;
+            $f->description = __('Standardmäßig ist dies "Passwort".');
+            $f->value = $data['passwordPlaceholder'];
+            $f->columnWidth = 34;
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldText");
+            $f->attr('name', 'loginButtonText');
+            $f->label = __('Login Button Text');
+            $f->useLanguages = true;
+            $f->description = __('Standardmäßig ist dies "Login".');
+            $f->value = $data['loginButtonText'];
+            $f->columnWidth = 33;
+            $fieldset->add($f);
+
+            $loginCss = trim($data['logincss']);
+            if (empty($loginCss)) {
+                $a = self::getDefaultData();
+                $loginCss = $a['logincss'];
+            }
+            $f = $this->wire('modules')->get("InputfieldTextarea");
+            $f->attr('name', 'logincss');
+            $f->label = __('CSS');
+            $f->description = __("Sie können den Stil des Anmeldeformulars hier ändern.");
+            $f->value = $loginCss;
+            $fieldset->add($f);
+
+        $wrapper->add($fieldset);
+
+        return $wrapper;
+    }
+
+}
